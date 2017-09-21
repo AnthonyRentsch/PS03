@@ -31,14 +31,124 @@ For both `data1` and `data2` tibbles (a tibble is a data frame with some
 * Create a visualizaztion of this model plotted over the given $(x_i, y_i)$ points for $i=1,\ldots,n=3000$.
 * Give your estimate $\widehat{\sigma}$ of $\sigma$ where the noise component $\epsilon_i$ is distributed with mean 0 and standard deviation $\sigma$.
 
+# Create Crossvalidation Function
 
-# Data 1
-
-```{r, echo=TRUE, warning=FALSE, message=FALSE}
+This function takes in two parameters: a data set to train the model on and a data set to validate the model on. It returns a data frame with the root mean squared error (RMSE) for each possible value of degrees of freedom.
+```{r}
+crossvalidate <- function(train, test){
+  storage <- data.frame()
+  i <- 2
+  while(i <= nrow(train)){
+    model <- smooth.spline(x = train$x,y = train$y, df=i)
+    new_data <- test$x
+    preds <- predict(model, new_data)
+    preds <- as.data.frame(preds)
+    preds <- cbind(preds, y_obs = train$y)
+    RMSE <- sqrt(mean(preds$y_obs - preds$y)^2)
+    new_row <- c(i, RMSE)
+    storage <- rbind(storage, new_row)
+    i = i + 1
+  }
+  names(storage) <- c("df","RMSE")
+  return(storage)
+}
 ```
 
-# Data 2
+# Data 1 - Running the crossvalidation
 
+Here I will use run the crossvalidation twice, training on one half of the data and testing on the other, and then doing this again with the two data sets swapped.
 ```{r, echo=TRUE, warning=FALSE, message=FALSE}
+#split data1 into 2 parts
+inds <- sample(1:nrow(data1), size = nrow(data1)/2, replace = F)
+data11 <- data1[inds,]
+data12 <- data1[-inds,]
+  
+#use crossvalidation function
+fold1 <- crossvalidate(data11, data12)
+fold2 <- crossvalidate(data12, data11)
 ```
 
+# Data 1 - Picking the right model
+
+Now let's combine the two folds and calculate the average RMSE for each degree of freedom of the spline model.
+```{r, echo=TRUE, warning=FALSE, message=FALSE}
+data1_folds <- left_join(fold1, fold2, by = "df")
+names(data1_folds) <- c("df","fold1","fold2")
+data1_folds$meanRMSE <- (data1_folds$fold1 + data1_folds$fold1)/2
+```
+
+Let's visualize this. Which value of degree of freeom gives us the lowest average out-of-sample RMSE?
+```{r, echo=TRUE, warning=FALSE, message=FALSE}
+min_point <- data1_folds[which(data1_folds$meanRMSE == min(data1_folds$meanRMSE)),]
+
+ggplot() +
+  geom_line(data = data1_folds, aes(x = df ,y = meanRMSE)) +
+  geom_point(data = min_point, aes(x = df, y = meanRMSE), colour = "red") +
+  geom_label(data = min_point, 
+             aes(df, meanRMSE, label = paste0("(",df,","," ",round(meanRMSE,2),")",sep="")),
+             fontface = "bold", fill = "grey90", label.size = 0, nudge_x = 120) +
+  geom_segment(data = min_point, aes(x = df, y = 0, xend = df, yend = meanRMSE), 
+               colour = "red", linetype = "dashed") +
+  geom_segment(data = min_point, aes(x = -100, y = meanRMSE, xend = df, yend = meanRMSE), 
+               colour = "red", linetype = "dashed") +
+  labs(title = "Crossvalidation for data1", x = "degrees of freedom", y = "mean RMSE") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+I do worry that the the degrees of freedom corresponds to the lowest mean RMSE is so low. I would have expected to find the lowest mean RMSE value at the next "dip" in the curve. I may revisit this later.
+
+# Data 1 - Plotting this model
+
+```{r, echo=TRUE, warning=FALSE, message=FALSE}
+
+
+```
+
+# Data 2 - Running the crossvalidation
+
+Now I'll move on and repeat this procedure for data2.
+```{r, echo=TRUE, warning=FALSE, message=FALSE}
+#split data2 into 5 parts
+inds <- sample(1:nrow(data1), size = nrow(data1)/2, replace = F)
+data21 <- data2[inds,]
+data22 <- data2[-inds,]
+  
+#use crossvalidation function
+fold1 <- crossvalidate(data21, data22)
+fold2 <- crossvalidate(data22, data21)
+```
+
+# Data 2 - Picking the right model
+
+Again, let's combine the two folds and calculate the average RMSE for each degree of freedom of the spline model.
+```{r, echo=TRUE, warning=FALSE, message=FALSE}
+data2_folds <- left_join(fold1, fold2, by = "df")
+names(data2_folds) <- c("df","fold1","fold2")
+data2_folds$meanRMSE <- (data2_folds$fold1 + data2_folds$fold1)/2
+```
+
+And again, let's visualize which value of degree of freeom gives us the lowest average out-of-sample RMSE.
+```{r, echo=TRUE, warning=FALSE, message=FALSE}
+min_point <- data2_folds[which(data2_folds$meanRMSE == min(data2_folds$meanRMSE)),]
+
+ggplot() +
+  geom_line(data = data2_folds, aes(x = df ,y = meanRMSE)) +
+  geom_point(data = min_point, aes(x = df, y = meanRMSE), colour = "red") +
+  geom_label(data = min_point, 
+             aes(df, meanRMSE, label = paste0("(",df,","," ",round(meanRMSE,2),")",sep="")),
+             fontface = "bold", fill = "grey90", label.size = 0, nudge_x = 120) +
+  geom_segment(data = min_point, aes(x = df, y = -0.05, xend = df, yend = meanRMSE), 
+               colour = "red", linetype = "dashed") +
+  geom_segment(data = min_point, aes(x = -100, y = meanRMSE, xend = df, yend = meanRMSE), 
+               colour = "red", linetype = "dashed") +
+  labs(title = "Crossvalidation for data2", x = "degrees of freedom", y = "mean RMSE") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+Again I find that the degrees of freedom that corresponds to the lowest mean RMSE is very low - in this case 4 I would have expected to find the lowest mean RMSE value at the next "dip" in the curve. I may revisit this later.
+
+# Data 2 - Plotting this model
+```{r, echo=TRUE, warning=FALSE, message=FALSE}
+
+
+```
