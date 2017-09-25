@@ -16,6 +16,7 @@ knitr::opts_chunk$set(echo = TRUE, fig.width=8, fig.height=4.5)
 
 # Load packages
 library(tidyverse)
+library(plyr)
 data1 <- read.csv("data/data1.csv")
 data2 <- read.csv("data/data2.csv")
 ```
@@ -33,17 +34,18 @@ For both `data1` and `data2` tibbles (a tibble is a data frame with some
 
 # Create Crossvalidation Function
 
-This function takes in two parameters: a data set to train the model on and a data set to validate the model on. It returns a data frame with the root mean squared error (RMSE) for each possible value of degrees of freedom.
+This function takes in two parameters: a data set to train the model on and a data set to validate the model on. It returns a data frame with the root mean squared error (RMSE) for every possible value of degrees of freedom, up to 100. I chose 100 as the maximum degrees of freedom to speed up computation and make visuals easier to interpret.
 ```{r}
 crossvalidate <- function(train, test){
   storage <- data.frame()
+  preds <- NULL
   i <- 2
-  while(i <= nrow(train)){
+  while(i <= 100){
     model <- smooth.spline(x = train$x,y = train$y, df=i)
     new_data <- test$x
     preds <- predict(model, new_data)
     preds <- as.data.frame(preds)
-    preds <- cbind(preds, y_obs = train$y)
+    preds <- cbind(preds, y_obs = test$y)
     RMSE <- sqrt(mean(preds$y_obs - preds$y)^2)
     new_row <- c(i, RMSE)
     storage <- rbind(storage, new_row)
@@ -54,80 +56,96 @@ crossvalidate <- function(train, test){
 }
 ```
 
-# Data 1 - Running the crossvalidation
+# Data 1
 
-Here I will use run the crossvalidation twice, training on one half of the data and testing on the other, and then doing this again with the two data sets swapped.
+Here I will run the crossvalidation function five times for data1, training on four-fifths of the data and validating on the other fifth, and then switching which one-fifth of the data is withheld from training.
 ```{r, echo=TRUE, warning=FALSE, message=FALSE}
-#split data1 into 2 parts
-inds <- sample(1:nrow(data1), size = nrow(data1)/2, replace = F)
-data11 <- data1[inds,]
-data12 <- data1[-inds,]
-  
-#use crossvalidation function
-fold1 <- crossvalidate(data11, data12)
-fold2 <- crossvalidate(data12, data11)
+#split data1 into 5 parts
+set.seed(1)
+groups <- sample(1:5, size = nrow(data1), replace=T, prob=c(0.2,0.2,0.2,0.2,0.2))
+data11 <- data1[groups==1,]
+data12 <- data1[groups==2,]
+data13 <- data1[groups==3,]
+data14 <- data1[groups==4,]
+data15 <- data1[groups==5,]
+
+#run the crossvalidation
+fold1_data1 <- crossvalidate(data1[groups != 1,], data11)
+fold2_data1 <- crossvalidate(data1[groups != 2,], data12)
+fold3_data1 <- crossvalidate(data1[groups != 3,], data13)
+fold4_data1 <- crossvalidate(data1[groups != 4,], data14)
+fold5_data1 <- crossvalidate(data1[groups != 5,], data15)
 ```
 
-# Data 1 - Picking the right model
-
-Now let's combine the two folds and calculate the average RMSE for each degree of freedom of the spline model.
+Now let's combine the five folds and calculate the average RMSE for each degree of freedom of the spline model.
 ```{r, echo=TRUE, warning=FALSE, message=FALSE}
-data1_folds <- left_join(fold1, fold2, by = "df")
-names(data1_folds) <- c("df","fold1","fold2")
-data1_folds$meanRMSE <- (data1_folds$fold1 + data1_folds$fold1)/2
+data1_folds <- join_all(list(fold1_data1, fold2_data1, fold3_data1, fold4_data1, fold5_data1), by = "df")
+names(data1_folds) <- c("df","fold1","fold2","fold3","fold4","fold5")
+data1_folds$meanRMSE <- (data1_folds$fold1 + data1_folds$fold2 + data1_folds$fold3 + data1_folds$fold4 + 
+                           data1_folds$fold5)/5
 ```
 
-Let's visualize this. Which value of degree of freeom gives us the lowest average out-of-sample RMSE?
+Let's visualize this. Which value of degrees of freeom gives us the lowest average out-of-sample RMSE?
 ```{r, echo=TRUE, warning=FALSE, message=FALSE}
 min_point <- data1_folds[which(data1_folds$meanRMSE == min(data1_folds$meanRMSE)),]
 
 ggplot() +
-  geom_line(data = data1_folds, aes(x = df ,y = meanRMSE)) +
+  geom_line(data = data1_folds, aes(x = df, y = meanRMSE)) +
   geom_point(data = min_point, aes(x = df, y = meanRMSE), colour = "red") +
   geom_label(data = min_point, 
-             aes(df, meanRMSE, label = paste0("(",df,","," ",round(meanRMSE,2),")",sep="")),
-             fontface = "bold", fill = "grey90", label.size = 0, nudge_x = 120) +
+             aes(df, meanRMSE, label = paste0("(",df,","," ",round(meanRMSE,5),")",sep="")),
+             fontface = "bold", fill = "grey90", label.size = 0, nudge_x = 10, nudge_y = -0.05) +
   geom_segment(data = min_point, aes(x = df, y = 0, xend = df, yend = meanRMSE), 
                colour = "red", linetype = "dashed") +
-  geom_segment(data = min_point, aes(x = -100, y = meanRMSE, xend = df, yend = meanRMSE), 
+  geom_segment(data = min_point, aes(x = 0, y = meanRMSE, xend = df, yend = meanRMSE), 
                colour = "red", linetype = "dashed") +
   labs(title = "Crossvalidation for data1", x = "degrees of freedom", y = "mean RMSE") +
   theme(plot.title = element_text(hjust = 0.5))
 ```
 
-I do worry that the the degrees of freedom corresponds to the lowest mean RMSE is so low. I would have expected to find the lowest mean RMSE value at the next "dip" in the curve. I may revisit this later.
-
-# Data 1 - Plotting this model
-
+The crossvalidation indicates that a spline model with 13 degrees of freedom gives us the lowest out-of-sample error (RMSE equals roughly 0.42491, which is my estimate for $\sigma$, the standard deviation of the noise component of the model) for data1. Below is a plot of this model against the actual data.
 ```{r, echo=TRUE, warning=FALSE, message=FALSE}
-
-
+spline.data1 <- smooth.spline(x = data1$x,y = data1$y, df=min_point$df) %>% broom::augment()
+  
+ggplot() +
+  geom_point(data = data1, aes(x = x, y = y)) +
+  geom_line(data = spline.data1, aes(x = x, y = .fitted), colour = "#FB4D42", size = 2)
 ```
+To sum up, for data1, crossvalidation indicates that the best splines model has:
 
-# Data 2 - Running the crossvalidation
+* degrees of freedom = 13
+* $\widehat{\sigma}$ = 0.42491
+
+# Data 2
 
 Now I'll move on and repeat this procedure for data2.
 ```{r, echo=TRUE, warning=FALSE, message=FALSE}
 #split data2 into 5 parts
-inds <- sample(1:nrow(data1), size = nrow(data1)/2, replace = F)
-data21 <- data2[inds,]
-data22 <- data2[-inds,]
-  
+set.seed(2)
+groups <- sample(1:5, size = nrow(data1), replace=T, prob=c(0.2,0.2,0.2,0.2,0.2))
+data21 <- data2[groups==1,]
+data22 <- data2[groups==2,]
+data23 <- data2[groups==3,]
+data24 <- data2[groups==4,]
+data25 <- data2[groups==5,]
+
 #use crossvalidation function
-fold1 <- crossvalidate(data21, data22)
-fold2 <- crossvalidate(data22, data21)
+fold1_data2 <- crossvalidate(data2[groups != 1,], data21)
+fold2_data2 <- crossvalidate(data2[groups != 2,], data22)
+fold3_data2 <- crossvalidate(data1[groups != 3,], data23)
+fold4_data2 <- crossvalidate(data2[groups != 4,], data24)
+fold5_data2 <- crossvalidate(data2[groups != 5,], data25)
 ```
 
-# Data 2 - Picking the right model
-
-Again, let's combine the two folds and calculate the average RMSE for each degree of freedom of the spline model.
+Again, let's combine the five folds and calculate the average RMSE for each degree of freedom of the spline model.
 ```{r, echo=TRUE, warning=FALSE, message=FALSE}
-data2_folds <- left_join(fold1, fold2, by = "df")
-names(data2_folds) <- c("df","fold1","fold2")
-data2_folds$meanRMSE <- (data2_folds$fold1 + data2_folds$fold1)/2
+data2_folds <- join_all(list(fold1_data2, fold2_data2, fold3_data2, fold4_data2, fold5_data2), by = "df")
+names(data2_folds) <- c("df","fold1","fold2","fold3","fold4","fold5")
+data2_folds$meanRMSE <- (data2_folds$fold1 + data2_folds$fold2 + data2_folds$fold3 + data2_folds$fold4 + 
+                           data2_folds$fold5)/5
 ```
 
-And again, let's visualize which value of degree of freeom gives us the lowest average out-of-sample RMSE.
+And again, let's visualize which value of degrees of freedom gives us the lowest average out-of-sample RMSE.
 ```{r, echo=TRUE, warning=FALSE, message=FALSE}
 min_point <- data2_folds[which(data2_folds$meanRMSE == min(data2_folds$meanRMSE)),]
 
@@ -135,20 +153,26 @@ ggplot() +
   geom_line(data = data2_folds, aes(x = df ,y = meanRMSE)) +
   geom_point(data = min_point, aes(x = df, y = meanRMSE), colour = "red") +
   geom_label(data = min_point, 
-             aes(df, meanRMSE, label = paste0("(",df,","," ",round(meanRMSE,2),")",sep="")),
-             fontface = "bold", fill = "grey90", label.size = 0, nudge_x = 120) +
-  geom_segment(data = min_point, aes(x = df, y = -0.05, xend = df, yend = meanRMSE), 
+             aes(df, meanRMSE, label = paste0("(",df,","," ",round(meanRMSE,5),")",sep="")),
+             fontface = "bold", fill = "grey90", label.size = 0, nudge_x = 10, nudge_y = -0.05) +
+  geom_segment(data = min_point, aes(x = df, y = 0, xend = df, yend = meanRMSE), 
                colour = "red", linetype = "dashed") +
-  geom_segment(data = min_point, aes(x = -100, y = meanRMSE, xend = df, yend = meanRMSE), 
+  geom_segment(data = min_point, aes(x = 0, y = meanRMSE, xend = df, yend = meanRMSE), 
                colour = "red", linetype = "dashed") +
   labs(title = "Crossvalidation for data2", x = "degrees of freedom", y = "mean RMSE") +
   theme(plot.title = element_text(hjust = 0.5))
 ```
 
-Again I find that the degrees of freedom that corresponds to the lowest mean RMSE is very low - in this case 4 I would have expected to find the lowest mean RMSE value at the next "dip" in the curve. I may revisit this later.
-
-# Data 2 - Plotting this model
+The crossvalidation indicates that a spline model with 15 degrees of freedom gives us the lowest out-of-sample error (RMSE equals roughly 1.32558, which is my estimate for $\sigma$, the standard deviation of the noise component of the model). Below is a plot of this model against the actual data.
 ```{r, echo=TRUE, warning=FALSE, message=FALSE}
-
-
+spline.data2 <- smooth.spline(x = data2$x,y = data2$y, df=min_point$df) %>% broom::augment()
+  
+ggplot() +
+  geom_point(data = data2, aes(x = x, y = y)) +
+  geom_line(data = spline.data2, aes(x = x, y = .fitted), colour = "#FB4D42", size = 2)
 ```
+
+To sum up, for data2, crossvalidation indicates that the best splines model has:
+
+* degrees of freedom = 15
+* $\widehat{\sigma}$ = 1.32558
