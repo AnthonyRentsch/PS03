@@ -46,7 +46,7 @@ crossvalidate <- function(train, test){
     preds <- predict(model, new_data)
     preds <- as.data.frame(preds)
     preds <- cbind(preds, y_obs = test$y)
-    RMSE <- sqrt(mean(preds$y_obs - preds$y)^2)
+    RMSE <- sqrt(mean((preds$y_obs - preds$y)^2))
     new_row <- c(i, RMSE)
     storage <- rbind(storage, new_row)
     i = i + 1
@@ -103,7 +103,7 @@ ggplot() +
   theme(plot.title = element_text(hjust = 0.5))
 ```
 
-The crossvalidation indicates that a spline model with 13 degrees of freedom gives us the lowest out-of-sample error (RMSE equals roughly 0.42491, which is my estimate for $\sigma$, the standard deviation of the noise component of the model) for data1. Below is a plot of this model against the actual data.
+The crossvalidation indicates that a spline model with 33 degrees of freedom gives us the lowest out-of-sample error (RMSE equals roughly 15.07515, which is my estimate for $\sigma$, the standard deviation of the noise component of the model) for data1. Below is a plot of this model against the actual data.
 ```{r, echo=TRUE, warning=FALSE, message=FALSE}
 spline.data1 <- smooth.spline(x = data1$x,y = data1$y, df=min_point$df) %>% broom::augment()
   
@@ -113,8 +113,8 @@ ggplot() +
 ```
 To sum up, for data1, crossvalidation indicates that the best splines model has:
 
-* degrees of freedom = 13
-* $\widehat{\sigma}$ = 0.42491
+* degrees of freedom = 33
+* $\widehat{\sigma}$ = 15.07515
 
 # Data 2
 
@@ -163,7 +163,7 @@ ggplot() +
   theme(plot.title = element_text(hjust = 0.5))
 ```
 
-The crossvalidation indicates that a spline model with 15 degrees of freedom gives us the lowest out-of-sample error (RMSE equals roughly 1.32558, which is my estimate for $\sigma$, the standard deviation of the noise component of the model). Below is a plot of this model against the actual data.
+The crossvalidation indicates that a spline model with 27 degrees of freedom gives us the lowest out-of-sample error (RMSE equals roughly 24.95273, which is my estimate for $\sigma$, the standard deviation of the noise component of the model). Below is a plot of this model against the actual data.
 ```{r, echo=TRUE, warning=FALSE, message=FALSE}
 spline.data2 <- smooth.spline(x = data2$x,y = data2$y, df=min_point$df) %>% broom::augment()
   
@@ -174,5 +174,5 @@ ggplot() +
 
 To sum up, for data2, crossvalidation indicates that the best splines model has:
 
-* degrees of freedom = 15
-* $\widehat{\sigma}$ = 1.32558
+* degrees of freedom = 27
+* $\widehat{\sigma}$ = 24.95273
